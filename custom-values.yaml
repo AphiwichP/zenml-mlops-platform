@@ -1,0 +1,18 @@
+# custom-values.yaml
+server:
+  database:
+    # เราใช้ Root ไปก่อนใน Lab นี้เพื่อให้มีสิทธิ์สร้าง Database 'zenml' อัตโนมัติครับ
+    url: "mysql://root:YOUR_MYSQL_ROOT_PASSWORD@mysql.zenml-server.svc.cluster.local:3306/zenml"
+
+# กำหนดทรัพยากรไม่ให้ ZenML กินดุเกินไป
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# ส่วนนี้สำหรับ Task 5.3 ถ้าต้องการทำ Ingress (Admin UI)
+ingress:
+  enabled: false # ถ้ายังไม่มี Domain ให้ปิดไว้ก่อน แล้วใช้ Port-forward แทนครับ

@@ -1,0 +1,73 @@
+# --- Block 1: Secret ---
+# เก็บ password ไม่ให้โผล่ใน plain text ใน Deployment spec
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: zenml-server
+type: Opaque
+stringData:
+  root-password: "YOUR_MYSQL_ROOT_PASSWORD"
+
+---
+# --- Block 2: Deployment ---
+# ใช้ Deployment แทน StatefulSet เพราะ lab นี้เราจัดการ PVC เองอยู่แล้ว
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: zenml-server
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  strategy:
+    type: Recreate   # สำคัญ! ห้าม RollingUpdate กับ DB ที่มี single PVC
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0   # official Docker Hub image — ฟรี ไม่ถูก block
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: root-password
+            - name: MYSQL_DATABASE
+              value: zenml   # สร้าง database 'zenml' ให้อัตโนมัติตอน startup
+          ports:
+            - containerPort: 3306
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: mysql-storage
+              mountPath: /var/lib/mysql   # official MySQL เก็บ data ที่นี่
+      volumes:
+        - name: mysql-storage
+          persistentVolumeClaim:
+            claimName: data-mysql-0   # reuse PVC เดิมที่มีอยู่แล้ว
+
+---
+# --- Block 3: Service ---
+# ชื่อ 'mysql' สำคัญมาก! ต้องตรงกับ URL ใน custom-values.yaml
+# mysql://root:...@mysql.zenml-server.svc.cluster.local:3306/zenml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql        # ← ต้องเป็นชื่อนี้เท่านั้น
+  namespace: zenml-server
+spec:
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Virtual environment
+venv/
+zenml-venv/
+.venv/
+
+# ZenML local artifacts
+.zenml/
+
+# OS
+.DS_Store
+Thumbs.db

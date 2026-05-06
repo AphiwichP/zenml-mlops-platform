@@ -1,15 +1,17 @@
 # ZenML MLOps Platform on Kubernetes
 
-Deploy ZenML self-hosted server on GKE using a local Helm chart and official MySQL image.
+> ระบบ MLOps Platform สำหรับจัดการ ML Pipeline บน Kubernetes โดยใช้ Helm chart และ MySQL official image
+>
+> Self-hosted ZenML server deployment on GKE using local Helm chart and official MySQL image.
 
 <!-- IMAGE: architecture diagram showing namespace zenml-server, MySQL pod, ZenML server pod, PVC, and port-forward to localhost:8080 -->
 
 ---
 
-## Prerequisites
+## สิ่งที่ต้องมีก่อนเริ่ม / Prerequisites
 
-| Requirement | Version | Check |
-| ----------- | ------- | ----- |
+| สิ่งที่ต้องการ / Requirement | เวอร์ชัน / Version | ตรวจสอบ / Check |
+| ----------------------------- | ------------------ | --------------- |
 | kubectl | any | `kubectl version --client` |
 | helm | >= 3.12 | `helm version` |
 | Python | 3.12 | `python3 --version` |
@@ -17,27 +19,42 @@ Deploy ZenML self-hosted server on GKE using a local Helm chart and official MyS
 
 ---
 
-## Project Structure
+## โครงสร้างโปรเจกต์ / Project Structure
 
 ```text
 zenml-mlops-platform/
-├── README.md               # This file — setup guide
-├── runbook-zenml.md        # Detailed runbook + known issues
-├── custom-values.yaml      # ZenML Helm overrides (DB URL, resources)
+├── README.md               # คู่มือการติดตั้ง / Setup guide
+├── custom-values.yaml      # ค่า config สำหรับ ZenML Helm / ZenML Helm overrides
 ├── manifests/
-│   └── mysql-official.yaml # MySQL manifest (Secret + Deployment + Service)
-├── zenml/                  # ZenML Helm chart
+│   └── mysql-official.yaml # Kubernetes manifest สำหรับ MySQL
+├── zenml/                  # ZenML Helm chart (local)
 │   ├── Chart.yaml
 │   ├── values.yaml
 │   └── templates/
 └── examples/
-    ├── smoke_test.py       # 2-step pipeline smoke test
-    └── ml_pipeline.py      # 4-step ML pipeline with caching demo
+    ├── smoke_test.py       # Pipeline ทดสอบ 2 steps / 2-step smoke test
+    └── ml_pipeline.py      # Pipeline ตัวอย่าง 4 steps + caching demo
 ```
 
 ---
 
-## Step 1 — Create Namespace
+## Admin UI
+
+**ZenML Dashboard** เข้าใช้งานผ่าน port-forward:
+
+```bash
+kubectl port-forward -n zenml-server svc/zenml-server 8080:80
+```
+
+เปิด browser ที่ / Open browser at: **http://localhost:8080**
+
+<!-- IMAGE: ZenML Dashboard หน้าหลักหลัง login สำเร็จ -->
+
+---
+
+## ขั้นตอนการติดตั้ง / Installation Steps
+
+### ขั้นตอนที่ 1 — สร้าง Namespace / Create Namespace
 
 ```bash
 kubectl create namespace zenml-server
@@ -45,31 +62,38 @@ kubectl create namespace zenml-server
 
 ---
 
-## Step 2 — Deploy MySQL
+### ขั้นตอนที่ 2 — ติดตั้ง MySQL / Deploy MySQL
 
-> **Note:** Bitnami MySQL images are behind a paywall since Aug 2025.
+> **หมายเหตุ / Note:** Bitnami MySQL image ถูกล็อกไม่ให้ใช้ฟรีตั้งแต่ Aug 2025
+> จึงใช้ official `mysql:8.0` image จาก Docker Hub แทน
+>
+> Bitnami MySQL images are behind a paywall since Aug 2025.
 > This setup uses the official `mysql:8.0` image from Docker Hub instead.
+
+**แก้ไข password ใน `manifests/mysql-official.yaml` ก่อน:**
+
+```yaml
+stringData:
+  root-password: "YOUR_MYSQL_ROOT_PASSWORD"  # เปลี่ยนเป็น password จริง
+```
+
+**แล้วรัน / Then apply:**
 
 ```bash
 kubectl apply -f manifests/mysql-official.yaml
-```
-
-Wait for MySQL to be ready:
-
-```bash
 kubectl get pods -n zenml-server -w
 ```
 
-<!-- IMAGE: terminal showing mysql-xxx pod reaching 1/1 Running status -->
+<!-- IMAGE: terminal แสดง mysql pod สถานะ 1/1 Running -->
 
-Expected output:
+ผลที่ต้องเห็น / Expected:
 
 ```text
 NAME                     READY   STATUS    RESTARTS   AGE
 mysql-784885ddbd-xxxxx   1/1     Running   0          60s
 ```
 
-### Verify MySQL connection
+**ตรวจสอบ MySQL / Verify MySQL:**
 
 ```bash
 kubectl run mysql-test --rm -it --restart=Never \
@@ -80,29 +104,35 @@ kubectl run mysql-test --rm -it --restart=Never \
      -e "SHOW DATABASES;"
 ```
 
-<!-- IMAGE: terminal showing SHOW DATABASES output with 'zenml' database listed -->
+<!-- IMAGE: terminal แสดง SHOW DATABASES ที่มี database 'zenml' อยู่ในรายการ -->
 
-Expected: database `zenml` appears in the list.
+ต้องเห็น database `zenml` ในรายการ / Expected: database `zenml` in the list.
 
 ---
 
-## Step 3 — Deploy ZenML Server
+### ขั้นตอนที่ 3 — ติดตั้ง ZenML Server / Deploy ZenML Server
+
+**แก้ไข password ใน `custom-values.yaml` ก่อน:**
+
+```yaml
+server:
+  database:
+    url: "mysql://root:YOUR_MYSQL_ROOT_PASSWORD@mysql.zenml-server.svc.cluster.local:3306/zenml"
+```
+
+**แล้วรัน / Then install:**
 
 ```bash
 helm install zenml-server ./zenml \
   --namespace zenml-server \
   --values custom-values.yaml
-```
 
-Wait for all pods to be ready:
-
-```bash
 kubectl get pods -n zenml-server -w
 ```
 
-<!-- IMAGE: terminal showing all 3 pods: mysql Running, zenml-server Running, db-migration Completed -->
+<!-- IMAGE: terminal แสดง pods ทั้ง 3 ตัว: mysql Running, zenml-server Running, db-migration Completed -->
 
-Expected:
+ผลที่ต้องเห็น / Expected:
 
 ```text
 NAME                                  READY   STATUS      AGE
@@ -111,13 +141,15 @@ zenml-server-587fd6445b-xxxxx         1/1     Running     2m
 zenml-server-db-migration-xxxxx       0/1     Completed   3m
 ```
 
-> `Completed` on the migration pod is expected — it runs database schema setup once and exits.
+> `Completed` บน migration pod คือปกติ — รัน schema setup ครั้งเดียวแล้วจบ
+>
+> `Completed` on the migration pod is expected — runs schema setup once and exits.
 
 ---
 
-## Step 4 — Fix user_metadata Column
+### ขั้นตอนที่ 4 — แก้ไข user_metadata Column / Fix user_metadata Column
 
-Run this **once** after the migration pod completes:
+รันคำสั่งนี้ **ครั้งเดียว** หลัง migration pod Completed:
 
 ```bash
 kubectl run mysql-fix --rm -it --restart=Never \
@@ -128,37 +160,38 @@ kubectl run mysql-fix --rm -it --restart=Never \
      -e "ALTER TABLE zenml.user MODIFY COLUMN user_metadata TEXT;"
 ```
 
-> **Why:** ZenML's default schema defines `user_metadata` as `VARCHAR(255)`.
-> The onboarding survey JSON exceeds this limit. This fix expands it to `TEXT` (65KB).
+> **ทำไม / Why:** ZenML สร้าง column `user_metadata` เป็น `VARCHAR(255)` ซึ่งเล็กเกินไปสำหรับ JSON onboarding survey
+> การแก้ไขนี้ขยายเป็น `TEXT` (65KB)
+>
+> ZenML's default schema defines `user_metadata` as `VARCHAR(255)`.
+> This fix expands it to `TEXT` (65KB) to prevent onboarding survey overflow.
 
 ---
 
-## Step 5 — Access Admin UI
+### ขั้นตอนที่ 5 — เข้าใช้งาน Admin UI / Access Admin UI
 
-In a **dedicated terminal** (keep it running):
+เปิด terminal แยก (ค้างไว้ตลอด) / In a dedicated terminal (keep it running):
 
 ```bash
 kubectl port-forward -n zenml-server svc/zenml-server 8080:80
 ```
 
-Open your browser at <http://localhost:8080>
-
-<!-- IMAGE: ZenML login/onboarding screen in browser at localhost:8080 -->
-
-### Initial setup
-
-1. Set **username** and **password** (min 8 chars, uppercase + lowercase + number + special char)
-2. Set **Server Name** (e.g. `zenml-lab`)
-3. Fill in **Name** and **Email**
-4. Select **role**: Platform Engineer / MLOps Engineer
-5. Select **AI types** and **challenges** as appropriate
-6. Skip the Slack community step
+เปิด browser ที่ / Open: **http://localhost:8080**
 
 <!-- IMAGE: ZenML onboarding screens — username/password, server name, role selection, AI types -->
 
+**ขั้นตอน onboarding / Initial setup:**
+
+1. ตั้ง **username** และ **password** (อย่างน้อย 8 ตัว, มีตัวใหญ่ + ตัวเล็ก + ตัวเลข + special char)
+2. ตั้งชื่อ **Server Name** เช่น `zenml-lab`
+3. กรอก **ชื่อและอีเมล / Name and Email**
+4. เลือก **role**: Platform Engineer / MLOps Engineer
+5. เลือก **AI types** และ **challenges** ตามต้องการ
+6. กด Skip สำหรับ Slack community
+
 ---
 
-## Step 6 — Install ZenML CLI
+### ขั้นตอนที่ 6 — ติดตั้ง ZenML CLI / Install ZenML CLI
 
 ```bash
 sudo apt install python3.12-venv -y
@@ -169,33 +202,33 @@ source ~/zenml-venv/bin/activate
 pip install "zenml==0.94.3"
 ```
 
-> **Important:** Run `source ~/zenml-venv/bin/activate` every time you open a new terminal before using the `zenml` command.
+> **สำคัญ / Important:** รัน `source ~/zenml-venv/bin/activate` ทุกครั้งที่เปิด terminal ใหม่ก่อนใช้ `zenml` command
 
 ---
 
-## Step 7 — Create Service Account & Login
+### ขั้นตอนที่ 7 — สร้าง Service Account และ Login / Create Service Account & Login
 
-### Create API Key in Dashboard
+**สร้าง API Key จาก Dashboard / Create API Key in Dashboard:**
 
-1. Go to **Settings → Service Accounts**
-2. Click **Create Service Account**
-3. Name: `cli-user`, check **"Create a default API Key"**
-4. Click **Add service account**
-5. **Copy the API key immediately** — it is shown only once
+1. ไปที่ / Go to **Settings → Service Accounts**
+2. กด / Click **Create Service Account**
+3. ชื่อ / Name: `cli-user` — ติ๊ก / check **"Create a default API Key"**
+4. กด / Click **Add service account**
+5. **Copy API key ทันที** — แสดงครั้งเดียวเท่านั้น / shown only once
 
 <!-- IMAGE: Dashboard Settings → Service Accounts → Add service account dialog -->
 
-<!-- IMAGE: API key display screen after service account creation — copy before closing -->
+<!-- IMAGE: หน้าแสดง API key หลังสร้าง Service Account — copy ก่อนปิด -->
 
-### Login via CLI
+**Login ผ่าน CLI / Login via CLI:**
 
 ```bash
 source ~/zenml-venv/bin/activate
 zenml login http://127.0.0.1:8080 --api-key
-# Paste the API key when prompted
+# วาง API key เมื่อถูกถาม / Paste the API key when prompted
 ```
 
-Expected output:
+ผลที่ต้องเห็น / Expected:
 
 ```text
 Authenticating to ZenML server 'http://127.0.0.1:8080' using an API key...
@@ -204,20 +237,20 @@ Setting the global active stack to default.
 Updated the global store configuration.
 ```
 
-<!-- IMAGE: terminal showing successful zenml login output -->
+<!-- IMAGE: terminal แสดง zenml login สำเร็จ -->
 
 ---
 
-## Step 8 — Verify Stack
+### ขั้นตอนที่ 8 — ตรวจสอบ Stack / Verify Stack
 
 ```bash
 zenml stack list
 zenml stack describe default
 ```
 
-<!-- IMAGE: terminal showing zenml stack describe with ARTIFACT_STORE, ORCHESTRATOR, DEPLOYER all set to default and marked ACTIVE -->
+<!-- IMAGE: terminal แสดง zenml stack describe พร้อม ARTIFACT_STORE, ORCHESTRATOR, DEPLOYER ครบ และ ACTIVE -->
 
-Expected:
+ผลที่ต้องเห็น / Expected:
 
 ```text
 Stack Configuration
@@ -235,15 +268,15 @@ Stack Configuration
 
 ---
 
-## Step 9 — Smoke Test
+### ขั้นตอนที่ 9 — Smoke Test
 
 ```bash
 python examples/smoke_test.py
 ```
 
-<!-- IMAGE: terminal showing pipeline run output with both steps completed and Dashboard URL printed -->
+<!-- IMAGE: terminal แสดง pipeline run output ทั้ง 2 steps เสร็จพร้อม Dashboard URL -->
 
-Expected output:
+ผลที่ต้องเห็น / Expected:
 
 ```text
 Initiating a new run for the pipeline: smoke_pipeline.
@@ -258,37 +291,35 @@ Step process has finished in 1.9s.
 Pipeline run has finished in 7.9s.
 ```
 
-### Verify in Dashboard
+**ตรวจสอบใน Dashboard / Verify in Dashboard:**
 
-Open the Dashboard URL from the output, or go to **Pipelines → smoke_pipeline → latest run**
+ไปที่ / Go to: **Pipelines → smoke_pipeline → latest run**
 
-<!-- IMAGE: ZenML Dashboard showing smoke_pipeline run — Status: completed, 2/2 steps, DAG graph with ingest→output→process→output -->
+<!-- IMAGE: ZenML Dashboard แสดง smoke_pipeline run — Status: completed, 2/2 steps, DAG graph -->
 
-Confirm:
+ยืนยัน / Confirm:
 
 - Status: **completed** ✅
 - Total Steps: **2**, Completed: **2**
-- DAG shows: `ingest → output → process → output`
+- DAG: `ingest → output → process → output`
 
 ---
 
 ## Credentials Reference
 
-| Service | Access | Notes |
-| ------- | ------ | ----- |
-| MySQL | `mysql -uroot -pYOUR_MYSQL_ROOT_PASSWORD` | Via `kubectl run` client pod |
-| ZenML Dashboard | <http://localhost:8080> | Requires active port-forward |
-| ZenML CLI | `zenml login --api-key` | Requires `~/zenml-venv` activated |
+| บริการ / Service | การเข้าถึง / Access | หมายเหตุ / Notes |
+| ---------------- | ------------------- | ---------------- |
+| MySQL | `mysql -uroot -pYOUR_MYSQL_ROOT_PASSWORD` | ผ่าน `kubectl run` client pod |
+| ZenML Dashboard | <http://localhost:8080> | ต้องเปิด port-forward ไว้ |
+| ZenML CLI | `zenml login --api-key` | ต้อง activate `~/zenml-venv` ก่อน |
 
 ---
 
-## Troubleshooting
+## การแก้ไขปัญหา / Troubleshooting
 
-See [runbook-zenml.md](./runbook-zenml.md) for detailed known issues and fixes.
-
-| Symptom | Fix |
-| ------- | --- |
-| MySQL pod `Init:ImagePullBackOff` | Use `manifests/mysql-official.yaml` — do not use bitnami image |
-| `Data too long for column 'user_metadata'` | Run ALTER TABLE fix in Step 4 |
-| `gio: Operation not supported` on `zenml login` | Use `--api-key` flag with Service Account key |
+| อาการ / Symptom | วิธีแก้ / Fix |
+| --------------- | ------------- |
+| MySQL pod `Init:ImagePullBackOff` | ใช้ `manifests/mysql-official.yaml` — ห้ามใช้ bitnami image |
+| `Data too long for column 'user_metadata'` | รัน ALTER TABLE fix ใน Step 4 |
+| `gio: Operation not supported` ตอน `zenml login` | ใช้ `--api-key` flag กับ Service Account key |
 | ZenML pod `CrashLoopBackOff` | `kubectl logs -n zenml-server deploy/zenml-server` |
